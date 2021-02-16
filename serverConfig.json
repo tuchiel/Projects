@@ -1,0 +1,6 @@
+{
+    "port": 80,
+    "addr": "0.0.0.0",
+    "privateKeyPath" : "certs/server.key",
+    "CertPath" : "certs/server.crt"
+}

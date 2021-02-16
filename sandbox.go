@@ -1,4 +1,4 @@
-package main
+package fibo
 
 import (
 	"fmt"
@@ -27,7 +27,7 @@ func assignAdd(res *uint64, op1 *uint64, op2 *uint64) {
 	*res = *op1 + *op2
 }
 
-func fibonaci2(input uint64, res *[]uint64) {
+func Fibonaci2(input uint64, res *[]uint64) {
 	switch input {
 	case 0:
 		(*res)[input] = 0
@@ -63,11 +63,11 @@ func snow() {
 	}
 }
 
-func main() {
+func compute() {
 	//var mutex = sync.Mutex{}
 	start := time.Now()
 	rand.Seed(time.Now().UnixNano())
-	sequenceEnd := uint64(rand.Intn(100))
+	sequenceEnd := uint64(rand.Intn(80))
 	/*for i := uint64(0); i <= sequenceEnd; i++ {
 		fmt.Println(fibonaci(i))
 	}
