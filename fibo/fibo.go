@@ -35,7 +35,7 @@ func Fibonaci2(input uint64, res *[]uint64) {
 		(*res)[input] = 1
 	default:
 		defer assignAdd(&((*res)[input]), &((*res)[input-1]), &((*res)[input-2]))
-		fibonaci2(input-1, res)
+		Fibonaci2(input-1, res)
 		//fibonaci2(input-2, res)
 	}
 }
@@ -93,7 +93,7 @@ func compute() {
 
 	result2 := make([]uint64, int(sequenceEnd+1))
 
-	fibonaci2(sequenceEnd, &result2)
+	Fibonaci2(sequenceEnd, &result2)
 	heuristicDuration := (time.Now().UnixNano() - start.UnixNano())
 	//fmt.Printf("Sync  computation took : %d\n", syncDuration)
 	//fmt.Printf("Async computation took : %v\n", asyncDuration)

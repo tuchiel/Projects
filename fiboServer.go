@@ -3,8 +3,9 @@ package main
 import (
 	//	"sandbox"
 
+	"Projects/fibo"
+	"Projects/myServer"
 	"encoding/json"
-	//"fibo"
 
 	"fmt"
 	"net/http"
@@ -14,17 +15,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 )
-
-type serverConf struct {
-	Port           int
-	Addr           string
-	CertPath       string
-	PrivateKeyPath string
-}
 
 type cnf interface {
 	getBaseServerUri() string
@@ -40,11 +31,25 @@ type getFiboResponse struct {
 	ComputationDuration int64
 }
 
+const ( // iota is reset to 0
+	RESP_SUCCESS           = 0
+	RESP_400_INVALID_PARAM = 4001
+	RESP_400_WRONG_METHOD  = 4002
+	RESP_400_INVALID_URI   = 4003
+	UNKNOWN                = 5000
+)
+
+type errorResponse struct {
+	ErrorDescription string
+	errCode          uint
+	errSpec          string
+}
+
 func assignAdd(res *uint64, op1 *uint64, op2 *uint64) {
 	*res = *op1 + *op2
 }
 
-func Fibonaci2(input uint64, res *[]uint64) {
+/*func Fibonaci2(input uint64, res *[]uint64) {
 	switch input {
 	case 0:
 		(*res)[input] = 0
@@ -55,11 +60,7 @@ func Fibonaci2(input uint64, res *[]uint64) {
 		Fibonaci2(input-1, res)
 		//fibonaci2(input-2, res)
 	}
-}
-
-func (s *serverConf) getBaseServerUri() string {
-	return s.Addr + ":" + strconv.FormatInt(int64(s.Port), 10)
-}
+}*/
 
 func handleVersion(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
@@ -75,72 +76,88 @@ func handleVersion(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (e *errorResponse) ConstructErrorDescription() {
+	switch e.errCode {
+	case RESP_SUCCESS:
+		return
+	case RESP_400_INVALID_PARAM:
+		e.ErrorDescription = "Following problem occured while procesing your parameter to fibonaci: " + e.errSpec
+	case RESP_400_WRONG_METHOD:
+		e.ErrorDescription = "This server does not support used method"
+	case RESP_400_INVALID_URI:
+		e.ErrorDescription = "Uri used for GET request has to be in format /compute/X where X is number greater than 0"
+	default:
+		e.ErrorDescription = "Unknown error occured during computation!"
+	}
+}
+
+func (e *errorResponse) getHttpRespCode() (retval uint) {
+	retval = e.errCode / 10
+	return
+}
+
 func handleCompute(w http.ResponseWriter, r *http.Request) {
+	var respData []byte
+	errCtx := errorResponse{errCode: RESP_SUCCESS}
+
 	if r.Method == "GET" {
-		var respData []byte
 		fmt.Printf("%s", r.URL.Path)
 		splited := strings.Split(r.URL.Path, "/")
 		if len(splited) != 3 {
-
+			errCtx.errCode = RESP_400_INVALID_URI
 		} else {
-			value, _ := (strconv.Atoi(splited[2]))
-			start := time.Now()
+			value, err := (strconv.Atoi(splited[2]))
+			if err != nil {
+				errCtx.errCode = RESP_400_INVALID_PARAM
+				errCtx.errSpec = err.Error()
+			} else {
+				start := time.Now()
 
-			result2 := make([]uint64, int(value+1))
+				result2 := make([]uint64, value+1)
 
-			Fibonaci2(uint64(value), &result2)
-			respBody := &getFiboResponse{Result: &result2, ComputationDuration: (time.Now().UnixNano() - start.UnixNano())}
-			respData, _ = (json.Marshal(respBody))
+				fibo.Fibonaci2(uint64(value), &result2)
+				respData, _ = (json.Marshal(&getFiboResponse{Result: &result2, ComputationDuration: (time.Now().UnixNano() - start.UnixNano())}))
+			}
 		}
 
-		w.Header().Add("Content-Type", "application/json")
-		w.WriteHeader(200)
-		w.Write(respData)
 	} else {
-
+		errCtx.errCode = RESP_400_WRONG_METHOD
 	}
+	if errCtx.errCode == 0 {
+		w.Header().Add("Content-Type", "application/json")
+	} else {
+		w.Header().Add("Content-Type", "application/problem+json")
+		errCtx.ConstructErrorDescription()
+		respData, _ = json.Marshal(errCtx)
+	}
+	w.Write(respData)
 }
 
 func main() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	data := make([]byte, 300)
-	file, err := os.Open("./ServerConfig.json")
-	count, err := file.Read(data)
-	if err != nil {
-		fmt.Printf("Failed to read config file reason: %s", err.Error())
-		return
-	}
-	if count > 0 {
-		var conf serverConf
-		data := data[:count]
-		fmt.Printf("Data: %s", data)
-		err := json.Unmarshal(data, &conf)
+	h2cServer := &myServer.SimpleServer{}
+
+	muxMap := make(map[string]http.HandlerFunc)
+
+	muxMap["version"] = handleVersion
+	muxMap["/compute/"] = handleCompute
+
+	h2cServer.Init("./serverConfig.json", &muxMap)
+	//http2.ConfigureServer(&srv, &http2Srv)
+	//ConfigureServer(&srv, nil)
+	go func(srvr *myServer.SimpleServer) {
+		sig := <-sigs
+		fmt.Println()
+		fmt.Println(sig)
+		err := srvr.Stop()
 		if err != nil {
-			fmt.Printf("Failed to parse configuration: %s", err.Error())
-			return
+			panic(err)
 		}
-
-		fmt.Printf("Server addr : %s", conf.getBaseServerUri())
-		http2Srv := &http2.Server{}
-		srv := &http.Server{Addr: conf.getBaseServerUri(), Handler: h2c.NewHandler(nil, http2Srv)}
-		http.Handle("/version", http.HandlerFunc(handleVersion))
-		http.Handle("/compute/", http.HandlerFunc(handleCompute))
-		//http2.ConfigureServer(&srv, &http2Srv)
-		//ConfigureServer(&srv, nil)
-		go func(srvr *http.Server) {
-			sig := <-sigs
-			fmt.Println()
-			fmt.Println(sig)
-			srvr.Close()
-		}(srv)
-
-		fmt.Println("Starting server!")
-		servErr := srv.ListenAndServe()
-		if servErr != nil && servErr != http.ErrServerClosed {
-			fmt.Printf("Failed to start server : %s", servErr.Error())
-		}
+	}(h2cServer)
+	servErr := h2cServer.Start()
+	if servErr != nil {
+		fmt.Printf(servErr.Error())
 	}
-
 }

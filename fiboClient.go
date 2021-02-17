@@ -11,7 +11,7 @@ import (
 
 func getServerVersion() {
 
-	const url = "http://127.0.0.1:80/compute/55"
+	const url = "http://127.0.0.1:80/compute/100"
 	client := http.Client{Transport: &http2.Transport{
 		AllowHTTP: true,
 		DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
