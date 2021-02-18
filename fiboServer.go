@@ -62,16 +62,16 @@ func assignAdd(res *uint64, op1 *uint64, op2 *uint64) {
 	}
 }*/
 
-func handleVersion(w http.ResponseWriter, r *http.Request) {
+func handleVersion(w *http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		respBody := &getResponse{Version: "0.0.1", Description: "Fibonachi computation server abc"}
 		respData, _ := (json.Marshal(respBody))
-		w.Header().Add("Content-Type", "application/json")
-		w.WriteHeader(200)
-		w.Write(respData)
+		(*w).Header().Add("Content-Type", "application/json")
+		(*w).WriteHeader(200)
+		(*w).Write(respData)
 	} else {
-		w.WriteHeader(500)
-		w.Write([]byte{})
+		(*w).WriteHeader(500)
+		(*w).Write([]byte{})
 		//fibo.Fibonaci2(1)
 	}
 }
@@ -96,41 +96,37 @@ func (e *errorResponse) getHttpRespCode() (retval uint) {
 	return
 }
 
-func handleCompute(w http.ResponseWriter, r *http.Request) {
+func handleCompute(w *http.ResponseWriter, r *http.Request) {
 	var respData []byte
 	errCtx := errorResponse{errCode: RESP_SUCCESS}
 
-	if r.Method == "GET" {
-		fmt.Printf("%s", r.URL.Path)
-		splited := strings.Split(r.URL.Path, "/")
-		if len(splited) != 3 {
-			errCtx.errCode = RESP_400_INVALID_URI
+	fmt.Printf("%s", r.URL.Path)
+	splited := strings.Split(r.URL.Path, "/")
+	if len(splited) != 3 {
+		errCtx.errCode = RESP_400_INVALID_URI
+	} else {
+		value, err := (strconv.Atoi(splited[2]))
+		if err != nil {
+			errCtx.errCode = RESP_400_INVALID_PARAM
+			errCtx.errSpec = err.Error()
 		} else {
-			value, err := (strconv.Atoi(splited[2]))
-			if err != nil {
-				errCtx.errCode = RESP_400_INVALID_PARAM
-				errCtx.errSpec = err.Error()
-			} else {
-				start := time.Now()
+			start := time.Now()
 
-				result2 := make([]uint64, value+1)
+			result2 := make([]uint64, value+1)
 
-				fibo.Fibonaci2(uint64(value), &result2)
-				respData, _ = (json.Marshal(&getFiboResponse{Result: &result2, ComputationDuration: (time.Now().UnixNano() - start.UnixNano())}))
-			}
+			fibo.Fibonaci2(uint64(value), &result2)
+			respData, _ = (json.Marshal(&getFiboResponse{Result: &result2, ComputationDuration: (time.Now().UnixNano() - start.UnixNano())}))
 		}
-
-	} else {
-		errCtx.errCode = RESP_400_WRONG_METHOD
 	}
+
 	if errCtx.errCode == 0 {
-		w.Header().Add("Content-Type", "application/json")
+		(*w).Header().Add("Content-Type", "application/json")
 	} else {
-		w.Header().Add("Content-Type", "application/problem+json")
+		(*w).Header().Add("Content-Type", "application/problem+json")
 		errCtx.ConstructErrorDescription()
 		respData, _ = json.Marshal(errCtx)
 	}
-	w.Write(respData)
+	(*w).Write(respData)
 }
 
 func main() {
@@ -139,12 +135,10 @@ func main() {
 
 	h2cServer := &myServer.SimpleServer{}
 
-	muxMap := make(map[string]http.HandlerFunc)
+	h2cServer.GetMux().Add("/version", "GET", handleVersion)
+	h2cServer.GetMux().Add("/compute/", "GET", handleCompute)
 
-	muxMap["version"] = handleVersion
-	muxMap["/compute/"] = handleCompute
-
-	h2cServer.Init("./serverConfig.json", &muxMap)
+	h2cServer.Init("./serverConfig.json")
 	//http2.ConfigureServer(&srv, &http2Srv)
 	//ConfigureServer(&srv, nil)
 	go func(srvr *myServer.SimpleServer) {

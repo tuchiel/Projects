@@ -26,38 +26,92 @@ func (s *serverConf) getBaseServerUri() string {
 type SimpleServer struct {
 	conf serverConf
 	srv  *http.Server
+	mux  SimpleServerMux
 }
+
+const default_handler_tag string = "__defaultHandlerTag"
 
 func createErrorFromError(description string, err error) error {
 	return errors.New(description + err.Error())
 }
 
-func (server *SimpleServer) Init(configFilePath string, serverMux *map[string]http.HandlerFunc) (err error) {
+type HandlerFunc func(*http.ResponseWriter, *http.Request)
+type MethodMux map[string]HandlerFunc
+type SimpleServerMux map[string]MethodMux
+
+type HandlerWrapper struct {
+	m MethodMux
+}
+
+func (h HandlerWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	handler, exists := h.m[r.Method]
+	if !exists {
+		handler, exists = h.m[default_handler_tag]
+	}
+	handler(&w, r)
+}
+
+func (mux *SimpleServerMux) Add(path string, method string, handler HandlerFunc) error {
+	switch {
+	case method == "GET",
+		method == "POST",
+		method == "PUT",
+		method == "PATCH",
+		method == "OPTIONS":
+	default:
+		return errors.New("specified method is not allowed")
+	}
+	if (*mux)[path] == nil {
+		(*mux)[path] = make(map[string]HandlerFunc)
+	}
+	(*mux)[path][method] = handler
+	return nil
+}
+
+func (mux *SimpleServerMux) AddDefault(path *string, handler HandlerFunc) {
+	if (*mux)[*path] == nil {
+		(*mux)[*path] = make(map[string]HandlerFunc)
+	}
+	(*mux)[*path][default_handler_tag] = handler
+}
+
+func (server *SimpleServer) GetMux() *SimpleServerMux {
+	if server.mux == nil {
+		server.mux = make(SimpleServerMux)
+	}
+	return &server.mux
+}
+
+func defaultServerHandler(w *http.ResponseWriter, r *http.Request) {
+	(*w).WriteHeader(405)
+	(*w).Write([]byte{})
+}
+
+func (server *SimpleServer) Init(configFilePath string) (err error) {
 	const (
-		bufResize = 300
+		bufferSize = 10
 	)
-	data := make([]byte, bufResize)
 	var (
 		file  *os.File
 		count int
 	)
+	file, err = os.Open(configFilePath)
+	if err != nil {
+		err = createErrorFromError("Failed to open server config file reason:", err)
+		return
+	}
+	buf := make([]byte, bufferSize)
+	data := make([]byte, 0)
 	for i := 0; ; i++ {
-
-		file, err = os.Open(configFilePath)
-		if err != nil {
-			err = createErrorFromError("Failed to open server config file reason:", err)
-			return
-		}
-		count, err = file.Read(data)
+		count, err = file.Read(buf)
 		if err != nil {
 			err = createErrorFromError("Failed to read server config file reason:", err)
 			return
 		}
-		if count < bufResize {
-			data = data[:i*bufResize+count]
+		data = append(data, buf...)
+		if count < bufferSize {
+			data = data[:i*bufferSize+count]
 			break
-		} else {
-			data = data[:bufResize]
 		}
 	}
 	fmt.Printf("Server configuration: %s", data)
@@ -67,10 +121,17 @@ func (server *SimpleServer) Init(configFilePath string, serverMux *map[string]ht
 		return
 	}
 
+	for _, handlers := range server.mux {
+		_, hasDefaultHandler := handlers[default_handler_tag]
+		if !hasDefaultHandler {
+			handlers[default_handler_tag] = defaultServerHandler
+		}
+	}
+
 	fmt.Printf("Server addr : %s", server.conf.getBaseServerUri())
-	server.srv = &http.Server{Addr: server.conf.getBaseServerUri(), Handler: h2c.NewHandler(nil, &http2.Server{})}
-	for uri, handler := range *serverMux {
-		http.Handle(uri, handler)
+	server.srv = &http.Server{Addr: server.conf.getBaseServerUri(), Handler: h2c.NewHandler(http.DefaultServeMux, &http2.Server{})}
+	for uri, uriHandlers := range server.mux {
+		http.Handle(uri, HandlerWrapper{uriHandlers})
 	}
 	return nil
 }
