@@ -53,11 +53,14 @@ func (h HandlerWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (mux *SimpleServerMux) Add(path string, method string, handler HandlerFunc) error {
 	switch {
-	case method == "GET",
-		method == "POST",
-		method == "PUT",
-		method == "PATCH",
-		method == "OPTIONS":
+	case method == http.MethodGet,
+		method == http.MethodPost,
+		method == http.MethodPut,
+		method == http.MethodPatch,
+		method == http.MethodConnect,
+		method == http.MethodHead,
+		method == http.MethodOptions,
+		method == http.MethodTrace:
 	default:
 		return errors.New("specified method is not allowed")
 	}
